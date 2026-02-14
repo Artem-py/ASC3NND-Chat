@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>Photon Chat Mobile</title>
+<style>
+body { font-family: Arial; background:#111; color:white; text-align:center; }
+#chat { width: 90%; height: 300px; margin: 10px auto; border:1px solid #444; overflow-y: auto; padding:10px; background:#1e1e1e;}
+input, button, select { padding:10px; margin:5px; border:none; border-radius:5px; }
+button { cursor:pointer; }
+.user { color:#00ffcc; }
+.system { color:gray; }
+</style>
+</head>
+<body>
+
+<h2>Photon Chat Mobile</h2>
+
+<div id="login">
+    <input id="username" placeholder="Нік">
+    <button onclick="connect()">Підключитися</button>
+</div>
+
+<div id="chatUI" style="display:none;">
+    <div id="chat"></div>
+    <select id="targetUser"></select>
+    <input id="message" placeholder="Повідомлення">
+    <button onclick="sendMessage()">Відправити</button>
+</div>
+
+<script src="https://unpkg.com/@photonengine/photon-javascript-sdk/dist/Photon.min.js"></script>
+
+<script>
+let client;
+let myUsername;
+
+function log(text, className="") {
+    const chat = document.getElementById("chat");
+    chat.innerHTML += "<div class='"+className+"'>" + text + "</div>";
+    chat.scrollTop = chat.scrollHeight;
+}
+
+function connect() {
+    myUsername = document.getElementById("username").value;
+    if(!myUsername) return alert("Введіть нік");
+
+    // Встав свій Photon App ID
+    const appId = "42a1ae68-f580-445a-9b4e-5c90dd615a89";
+
+    client = new Photon.LoadBalancing.LoadBalancingClient(
+        Photon.ConnectionProtocol.Wss,
+        appId,
+        "1.0"
+    );
+
+    client.myActor().setName(myUsername);
+
+    client.onStateChange = function(state) {
+        if (state === Photon.LoadBalancing.LoadBalancingClient.State.ConnectedToMaster) {
+            client.joinRoom("mainRoom") || client.createRoom("mainRoom");
+        }
+        if (state === Photon.LoadBalancing.LoadBalancingClient.State.Joined) {
+            document.getElementById("login").style.display="none";
+            document.getElementById("chatUI").style.display="block";
+            log("Підключено. Ваш ActorNumber: " + client.myActor().actorNr, "system");
+            updateUserList();
+        }
+    };
+
+    client.onEvent = function(code, content, actorNr) {
+        if(code === 1) {
+            log(`Повідомлення від ${actorNr}: ${content.text}`, "user");
+        }
+    };
+
+    client.onActorJoin = function(actor) { updateUserList(); }
+    client.onActorLeave = function(actor) { updateUserList(); }
+
+    client.connectToRegionMaster("eu");
+}
+
+function updateUserList() {
+    const select = document.getElementById("targetUser");
+    select.innerHTML = "";
+    if(!client.myRoomActors) return;
+    for(let actorNr in client.myRoomActors) {
+        let actor = client.myRoomActors[actorNr];
+        if(actor.actorNr !== client.myActor().actorNr) {
+            let opt = document.createElement("option");
+            opt.value = actor.actorNr;
+            opt.textContent = actor.name || ("Actor " + actor.actorNr);
+            select.appendChild(opt);
+        }
+    }
+}
+
+function sendMessage() {
+    const target = parseInt(document.getElementById("targetUser").value);
+    const text = document.getElementById("message").value;
+    if(!target || !text) return alert("Виберіть користувача і введіть повідомлення");
+
+    client.raiseEvent(1, { text }, { targetActors: [target] });
+    log(`Ви -> ${target}: ${text}`, "user");
+    document.getElementById("message").value="";
+}
+</script>
+</body>
+</html>
